@@ -58,6 +58,13 @@
 #abstract p {
   font-size: 15px;
   line-height: 1.85;
+  text-align: justify;
+  text-align-last: left;
+  hyphens: auto;
+}
+
+@media (max-width: 640px) {
+  #abstract p { text-align: left; hyphens: none; }
 }
 
 .analysis-equation {
