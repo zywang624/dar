@@ -1,15 +1,141 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Dual Dimensionality for Local and Global Attention</title>
-    <link rel="stylesheet" href="style.css">
-  </head>
-  <body>
-    <main>
-      <h1>Dual Dimensionality for Local and Global Attention</h1>
-      <p class="status">Work in Progress</p>
-    </main>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dual Dimensionality for Local and Global Attention</title>
+  <meta name="description" content="Distance-Adaptive Representation allocates representational capacity in attention according to token distance.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="depth.css">
+</head>
+<body>
+<main>
+  <section class="hero">
+    <h1>Dual Dimensionality for<br class="desktop"> Local and Global Attention</h1>
+    <p class="authors"><a href="https://scholar.google.com/citations?user=4TdiRMYAAAAJ&amp;hl=en">Zhiyuan Wang</a>, &nbsp; <a href="https://luoxuan-cs.github.io/">Xuan Luo</a>, &nbsp; <a href="https://siruizeng011.github.io/">Sirui Zeng</a>, &nbsp; <a href="https://sites.cs.ucsb.edu/~xyan/">Xifeng Yan</a></p>
+    <p class="affiliation">University of California, Santa Barbara</p>
+    <div class="resources">
+      <a href="https://arxiv.org/" aria-label="Paper (placeholder: arXiv homepage)"><img src="assets/paper-icon.svg" width="20" height="20" alt="">Paper</a>
+      <a href="https://github.com/zywang624/dar"><img src="assets/github-icon.svg" width="20" height="20" alt="">Code</a>
+      <a href="https://huggingface.co/" aria-label="Model (placeholder: Hugging Face homepage)"><span class="model-icon" aria-hidden="true">🤗</span>Model</a>
+    </div>
+    <p class="lead hypothesis" aria-label="Local tokens and distant tokens may require different representational capacities when predicting the next token."><span class="prediction-sentence" aria-hidden="true"><span style="--size: 13px">Local</span> <span style="--size: 14px">tokens</span> <span style="--size: 15px">and</span> <span style="--size: 16px">distant</span> <span style="--size: 17px">tokens</span> <span style="--size: 18px">may</span> <span style="--size: 19px">require</span> <span style="--size: 20px">different</span> <span style="--size: 21px">representational</span> <span style="--size: 22px">capacities</span> <span style="--size: 24px">when</span> <span style="--size: 26px">predicting</span> <span style="--size: 28px">the</span> <span class="prediction-next" style="--size: 34px">next<span class="prediction-dots"><span>.</span><span>.</span><span>.</span></span></span></span></p>
+  </section>
+
+  <section id="abstract">
+    <h2>Abstract</h2>
+    <p>Decoder-only Transformers compute attention over the KV cache of preceding tokens. Keys and Values are typically represented with the same dimensionality, regardless of their distance from the prediction target. In natural language, however, the next word is most strongly influenced by the immediately preceding tokens. We hypothesize that local and distant tokens impose asymmetric demands on representational capacity: local tokens are more critical for predicting immediate outputs and thus require richer representations, whereas distant tokens primarily serve as long-range memory, for which lower-dimensional representations may suffice. We formalize this idea as Distance-Adaptive Representation (DAR), which preserves full-dimensional representations within a local context window while assigning reduced-dimensional representations (e.g. 1/2 or 1/4 of the original dimensionality) to tokens beyond that window. Across multiple pretraining scales (70M to 410M parameters), as well as continued supervised fine-tuning on a 1B-scale model, this approach closely matches the performance of full-dimensional baselines. In contrast, uniformly reducing dimensionality across all token positions leads to worse performance. These results challenge the common assumption that key and value dimensionality should be uniform across token positions. We further develop an efficient realization of DAR that achieves model quality comparable to the MLA baseline while reducing the average KV-cache size by 68.8% at 8K context and achieving up to a 1.9× decoding speedup at 128K context on the evaluated models. Our findings suggest a new direction for designing attention architectures that allocate representational capacity according to token distance to reduce KV-cache during inference.</p>
+  </section>
+
+  <section id="idea">
+    <h2>From Observation to Hypothesis</h2>
+    <figure class="narrow">
+      <img src="assets/distance-analysis.png" width="984" height="672" alt="Query-conditioned effective dimensionality generally decreases with token distance in pretrained Pythia-2.8B-deduped." loading="lazy">
+      <figcaption>Figure 1. Effective dimensionality of attention-weighted value aggregates versus token distance, on pretrained Pythia-2.8B-deduped.</figcaption>
+    </figure>
+    <p>We measure the effective dimensionality of attention-weighted value aggregates at different distances from queries. We compute the attention-weighted value aggregate for query <i>i</i> and bin <i>b</i>:</p>
+    <div class="analysis-equation" role="math" aria-label="m i superscript b equals the sum over j such that i minus j is in distance bin b, of attention weight a i j times value vector v j">
+      <i>m</i><sub>i</sub><sup>(b)</sup> = <span class="equation-sum"><span>∑</span><small><i>j</i>: <i>i</i> − <i>j</i> ∈ <i>b</i></small></span> <i>a</i><sub>ij</sub><i>v</i><sub>j</sub>
+    </div>
+    <p>For each distance bin, we collect <i>m</i><sub>i</sub><sup>(b)</sup> across queries and apply PCA separately for each layer and attention head. We define <i>d</i><sub>90</sub> as the smallest number of principal components explaining 90% of the variance.</p>
+    <p>The normalized effective dimensionality, <i>d</i><sub>90</sub>/<i>d</i><sub>head</sub>, generally decreases with distance: variation in contributions from distant context is concentrated in fewer directions. This motivates our hypothesis about representational capacity.</p>
+    <blockquote class="paper-hypothesis">
+      <p>We hypothesize that local and distant tokens impose asymmetric demands on representational capacity: local tokens are more critical for predicting immediate outputs and thus require richer representations, whereas distant tokens primarily serve as long-range memory, for which lower-dimensional representations may suffice.</p>
+    </blockquote>
+  </section>
+
+  <section id="experiment">
+    <h2>Distance-Adaptive Representation</h2>
+    <p>We propose <strong>Distance-Adaptive Representation (DAR)</strong>: allocating representational capacity in attention according to token distance from the prediction target.</p>
+    <p>To validate the hypothesis, we implement a two-regime partition following DAR: full dimensionality is assigned to the local context, while a lower dimensionality is used for the distant context. The current token attends to all preceding tokens.</p>
+    <figure>
+      <img src="assets/architecture.png" width="1320" height="588" alt="DAR retains full-dimensional representations for local tokens and uses lower-dimensional representations for distant tokens.">
+      <figcaption>Our experimental setting: local dimension <i>d</i>, distant dimension <i>d</i><sub>down</sub> &lt; <i>d</i>.</figcaption>
+    </figure>
+  </section>
+
+  <section id="results">
+    <h2>Key Results</h2>
+    <h3>Hypothesis Validation</h3>
+    <h4 class="experiment-title">Pretraining on Pythia</h4>
+    <p>Reducing distant-token dimensionality to <strong>one quarter</strong> of the model dimension closely matches full-dimensional perplexity across the evaluated scales. Applying the same reduction uniformly performs worse.</p>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Relative perplexity across model scales">
+      <table>
+        <caption>Relative perplexity (%). Full-dimensional baseline = 100; lower is better.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Model</th>
+            <th scope="col"><span class="method-heading">Full dimension<span class="token-mini token-mini-full" aria-hidden="true" title="Full-dimensional representations at every position"><span></span><span></span><span></span><span></span><span></span><span></span></span></span></th>
+            <th scope="col"><span class="method-heading">Uniform reduction<span class="token-mini token-mini-uniform" aria-hidden="true" title="Lower-dimensional representations at every position"><span></span><span></span><span></span><span></span><span></span><span></span></span></span></th>
+            <th scope="col"><span class="method-heading">DAR<span class="token-mini token-mini-dar" aria-hidden="true" title="Lower-dimensional distant tokens on the left; full-dimensional local tokens on the right"><span></span><span></span><span></span><span></span><span></span><span></span></span></span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Pythia-70M</th><td>100.00</td><td>103.52</td><td class="best">99.12</td></tr>
+          <tr><th scope="row">Pythia-160M</th><td>100.00</td><td>102.26</td><td class="best">99.30</td></tr>
+          <tr><th scope="row">Pythia-410M</th><td>100.00</td><td>102.74</td><td class="best">100.83</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Paper Table 2. Local window: 128 tokens; distant dimension: <i>d</i>/4. Uniform reduction uses <i>d</i>/4 at every position. Per-dataset perplexity ratios are averaged over FineWeb-Edu, C4, and WikiText-103.</p>
+    <h3 id="efficiency">Efficient Realization: DAR-opt</h3>
+    <p>We further explore an efficient realization of DAR. Following the MLA approach, <strong>DAR-opt uses a higher-dimensional content latent for local tokens and a lower-dimensional content latent for distant tokens</strong>, with rotary position information stored separately. Once a token leaves the local window, its larger local latent can be discarded.</p>
+    <p>At the Pythia-70M scale, DAR-opt matches the quality of a high-latent MLA baseline with a smaller average cache. It also outperforms uniform MLA at a matched cache budget.</p>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="DAR-opt model quality and cache size">
+      <table>
+        <caption>Paper Table 4. Cache dimensions per token at 2K context; relative perplexity (%), lower is better.</caption>
+        <thead><tr><th scope="col">Method</th><th scope="col">Local / distant latent</th><th scope="col">Avg. cache dimensions</th><th scope="col">Relative perplexity</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">MLA-480</th><td>480 / 480</td><td>512</td><td>100.00</td></tr>
+          <tr><th scope="row">MLA-150</th><td>150 / 150</td><td>182</td><td>101.40</td></tr>
+          <tr class="dar-opt-row"><th scope="row">DAR-opt</th><td>480 / 120</td><td>182</td><td class="best">98.16</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>The smaller distant latent also enables faster long-context decoding: DAR-opt reduces average KV-cache size by <strong>68.8% at 8K</strong> and achieves up to <strong>1.90× speedup at 128K</strong> relative to MLA-480 in this setting. We also observe a consistent decoding-efficiency trend at the Pythia-160M scale.</p>
+    <figure>
+      <img src="assets/efficiency.png" width="1612" height="648" alt="DAR-opt cache compression and decoding speedup relative to MLA-480 across context lengths." loading="lazy">
+      <figcaption>Figure 3. Pythia-70M measurements with a custom fused Triton kernel. Production serving integration remains future work.</figcaption>
+    </figure>
+
+    <h3 id="downstream">Downstream Evaluation</h3>
+    <h4 class="experiment-title">SFT on OLMo-2-1B</h4>
+    <p>We also evaluate downstream performance through continued supervised fine-tuning of <strong>OLMo-2-1B-SFT</strong>. DAR preserves performance with a quarter-dimensional distant representation; more aggressive reduction eventually degrades quality.</p>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="OLMo-2-1B downstream results">
+      <table class="task-results">
+        <caption>Paper Table 3. Per-task scores and their average (Avg.). Higher is better.</caption>
+        <thead><tr><th scope="col">Distant dim.</th><th scope="col">MMLU</th><th scope="col">HellaSwag</th><th scope="col">CSQA</th><th scope="col">GSM8K</th><th scope="col">MBPP</th><th scope="col">Multi-News</th><th scope="col">Avg.</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">2048 (full)</th><td>0.4044</td><td>0.6502</td><td>0.5315</td><td>0.4450</td><td>0.1320</td><td>0.1653</td><td>0.3881</td></tr>
+          <tr><th scope="row">512 (1/4)</th><td>0.4051</td><td>0.6462</td><td>0.5304</td><td>0.4114</td><td>0.1440</td><td>0.1855</td><td>0.3871</td></tr>
+          <tr><th scope="row">256 (1/8)</th><td>0.3978</td><td>0.6440</td><td>0.5228</td><td>0.4182</td><td>0.1180</td><td>0.1867</td><td>0.3812</td></tr>
+          <tr><th scope="row">128 (1/16)</th><td>0.4067</td><td>0.6375</td><td>0.5209</td><td>0.4008</td><td>0.0780</td><td>0.1388</td><td>0.3638</td></tr>
+          <tr><th scope="row">64 (1/32)</th><td>0.3891</td><td>0.6338</td><td>0.5012</td><td>0.3907</td><td>0.0300</td><td>0.1545</td><td>0.3499</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Local window: 128 tokens.</p>
+
+    <h4 class="experiment-title experiment-divider">Distillation on MLA-converted LLaMA-3-8B</h4>
+    <p>We also evaluate distance-adaptive latent allocation using <strong>DAR-opt</strong>. To keep computational cost manageable, we distill from a fixed MLA-512 teacher converted from LLaMA-3-8B, rather than retraining the full 8B model. The goal is to assess how much teacher performance can be retained with a smaller KV cache, rather than to outperform the teacher.</p>
+    <p>DAR-opt remains slightly below MLA-512, but retains <strong>97.30%</strong> of its average task-relative performance while reducing average cached dimensions per token from <strong>576 to 336</strong> at 8K context. At the same cache size, it preserves more teacher performance than uniform MLA-272.</p>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="LLaMA-3-8B downstream results">
+      <table>
+        <caption>Paper Table 6. Cache dimensions per token at 8K; per-task scores and average task-relative score (Rel., %). Higher is better.</caption>
+        <thead><tr><th scope="col">Method</th><th scope="col">Avg. cache dim.</th><th scope="col">MMLU</th><th scope="col">GSM8K</th><th scope="col">RULER@8K</th><th scope="col">Rel. (%)</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">MLA-512 (teacher)</th><td>576</td><td>0.6221</td><td>0.7710</td><td>0.9234</td><td>100.00</td></tr>
+          <tr><th scope="row">MLA-272</th><td>336</td><td>0.4826</td><td>0.6869</td><td>0.8191</td><td>85.13</td></tr>
+          <tr><th scope="row">MLA-256</th><td>320</td><td>0.4673</td><td>0.6816</td><td>0.8175</td><td>84.02</td></tr>
+          <tr class="dar-opt-row"><th scope="row">DAR-opt</th><td>336</td><td>0.5993</td><td>0.7536</td><td>0.9031</td><td>97.30</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Local window: 256 tokens. DAR-opt local / distant content latent dimensions: 512 / 256. Reference: the fixed MLA-512 teacher.</p>
+
+  </section>
+  <footer>Last updated November 5, 2026</footer>
+</main>
+<script src="prediction.js" defer></script>
+</body>
 </html>
