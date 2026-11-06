@@ -19,7 +19,6 @@
       <a href="https://github.com/zywang624/dar"><img src="assets/github-icon.svg" width="20" height="20" alt="">Code</a>
       <a href="https://huggingface.co/" aria-label="Model (placeholder: Hugging Face homepage)"><span class="model-icon" aria-hidden="true">🤗</span>Model</a>
     </div>
-    <p class="lead hypothesis" aria-label="Local tokens and distant tokens may require different representational capacities when predicting the next token."><span class="prediction-sentence" aria-hidden="true"><span style="--size: 13px">Local</span> <span style="--size: 14px">tokens</span> <span style="--size: 15px">and</span> <span style="--size: 16px">distant</span> <span style="--size: 17px">tokens</span> <span style="--size: 18px">may</span> <span style="--size: 19px">require</span> <span style="--size: 20px">different</span> <span style="--size: 21px">representational</span> <span style="--size: 22px">capacities</span> <span style="--size: 24px">when</span> <span style="--size: 26px">predicting</span> <span style="--size: 28px">the</span> <span class="prediction-next" style="--size: 34px">next<span class="prediction-dots"><span>.</span><span>.</span><span>.</span></span></span></span></p>
   </section>
 
   <section id="abstract">
@@ -115,26 +114,9 @@
     </div>
     <p class="note">Local window: 128 tokens.</p>
 
-    <h4 class="experiment-title experiment-divider">Distillation on MLA-converted LLaMA-3-8B</h4>
-    <p>We also evaluate distance-adaptive latent allocation using <strong>DAR-opt</strong>. To keep computational cost manageable, we distill from a fixed MLA-512 teacher converted from LLaMA-3-8B, rather than retraining the full 8B model. The goal is to assess how much teacher performance can be retained with a smaller KV cache, rather than to outperform the teacher.</p>
-    <p>DAR-opt remains slightly below MLA-512, but retains <strong>97.30%</strong> of its average task-relative performance while reducing average cached dimensions per token from <strong>576 to 336</strong> at 8K context. At the same cache size, it preserves more teacher performance than uniform MLA-272.</p>
-    <div class="table-wrap" tabindex="0" role="region" aria-label="LLaMA-3-8B downstream results">
-      <table>
-        <caption>Paper Table 6. Cache dimensions per token at 8K; per-task scores and average task-relative score (Rel., %). Higher is better.</caption>
-        <thead><tr><th scope="col">Method</th><th scope="col">Avg. cache dim.</th><th scope="col">MMLU</th><th scope="col">GSM8K</th><th scope="col">RULER@8K</th><th scope="col">Rel. (%)</th></tr></thead>
-        <tbody>
-          <tr><th scope="row">MLA-512 (teacher)</th><td>576</td><td>0.6221</td><td>0.7710</td><td>0.9234</td><td>100.00</td></tr>
-          <tr><th scope="row">MLA-272</th><td>336</td><td>0.4826</td><td>0.6869</td><td>0.8191</td><td>85.13</td></tr>
-          <tr><th scope="row">MLA-256</th><td>320</td><td>0.4673</td><td>0.6816</td><td>0.8175</td><td>84.02</td></tr>
-          <tr class="dar-opt-row"><th scope="row">DAR-opt</th><td>336</td><td>0.5993</td><td>0.7536</td><td>0.9031</td><td>97.30</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="note">Local window: 256 tokens. DAR-opt local / distant content latent dimensions: 512 / 256. Reference: the fixed MLA-512 teacher.</p>
 
   </section>
   <footer>Last updated November 5, 2026</footer>
 </main>
-<script src="prediction.js" defer></script>
 </body>
 </html>
